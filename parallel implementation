@@ -1,0 +1,83 @@
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+
+int main(int argc, char** argv) {
+    int rank, size;
+    float a = 0.0f, b = 1.0f; // Limits of integration
+    int n;
+    float start, end, local_area, total_area, start_time, end_time;
+    int steps = 0, local_steps = 0, total_steps = 0;
+
+    MPI_Init(&argc, &argv); // Initialize MPI
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank); // Get rank of the process
+    MPI_Comm_size(MPI_COMM_WORLD, &size); // Get number of processes
+
+    start_time = MPI_Wtime();
+
+    if (rank == 0) {
+        printf("Enter the number of primes to find (n): ");
+        scanf("%d", &n);
+    }
+
+    // Broadcast n to all processes
+    MPI_Bcast(&n, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    int* prime = (int*)malloc((n * n) * sizeof(int));
+    for (int i = 2; i <= n * n; i++) {
+        prime[i] = 1;
+    }
+
+    int prime_count = 0;
+    int current_prime = 2;
+
+    while (prime_count < n) {
+        if (rank == prime_count % size) {
+            if (prime[current_prime]) {
+                for (int multiple = 2 * current_prime; multiple <= n * n; multiple += current_prime) {
+                    prime[multiple] = 0;
+                }
+                prime_count++;
+
+                // Break the loop if the desired number of primes is found
+                if (prime_count == n) {
+                    break;
+                }
+            }
+
+            // Send updated array to the next process
+            if (rank < size - 1) {
+                MPI_Send(prime, n * n + 1, MPI_INT, rank + 1, 0, MPI_COMM_WORLD);
+            }
+        } else {
+            // Receive updated array from the previous process
+            MPI_Recv(prime, n * n + 1, MPI_INT, rank - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+
+        current_prime++;
+    }
+
+    // Print the found primes on the root process
+    if (rank == 0) {
+        int c = 0;
+        printf("The first %d prime numbers are:\n", n);
+        for (int i = 2; i <= n * n; i++) {
+            if (prime[i] == 1) {
+                printf("%d ", i);
+                c++;
+                if (c==n) break;
+            }
+        }
+        printf("\n");
+    }
+
+    end_time = MPI_Wtime();
+
+    if (rank == 0) {
+        printf("The total time needed is: %f\n", end_time - start_time);
+    }
+
+    MPI_Finalize(); // Finalize MPI
+    return 0;
+}
